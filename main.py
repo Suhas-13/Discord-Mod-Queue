@@ -35,8 +35,8 @@ import time
 with open("dankmemeslogid.txt","a+") as f:
                         f.write("\n")
 reddit = praw.Reddit(client_id='',
-                     client_secret='',
-                     refresh_token='',
+                     client_secret='-',
+                     refresh_token='-',
                      user_agent='discordmodqueue by /u/hacksorskill')
 authorizationreddit= praw.Reddit(client_id='',
                      client_secret='',
@@ -98,45 +98,48 @@ async def on_message(message):
 
 @client.event
 async def on_reaction_add(reaction, user):
-    
-    if "DankOrNot" not in str(user):
-        print("User reacted: " + str(user))
-        message=reaction.message.content
-        author=str(user)
-        
-        await reaction.message.delete()
-        
-        authlist=open("authenticationDiscord.txt","r").read().split(" ")
-        for i in authlist:
-            if author.replace(" ","") in i:
-                tempuser = praw.Reddit(client_id='',
-                     client_secret='',
-                     redirect_uri='',
-                     refresh_token=i.split(":")[1].replace(" ",""),
-                     user_agent='discordmodqueue by /u/hacksorskill')
-                
+    try:
+        if "DankOrNot" not in str(user):
+            print("User reacted: " + str(user))
+            message=reaction.message.content
+            author=str(user)
+            
+            await reaction.message.delete()
+            
+            authlist=open("authenticationDiscord.txt","r").read().split(" ")
+            for i in authlist:
+                if author.replace(" ","") in i:
+                    tempuser = praw.Reddit(client_id='',
+                        client_secret='--',
+                        redirect_uri='https://localhost:8080',
+                        refresh_token=i.split(":")[1].replace(" ",""),
+                        user_agent='discordmodqueue by /u/hacksorskill')
+                    
 
+                    
+            submissionid=message[message.find("https://reddit.com/r/"):len(message)].split("/comments/")[1].split("/")[0]
+            if str(reaction.emoji).split(":")[1].split(":")[0]=="Approve":
+                print("Approving " + submissionid)
+                tempuser.submission(submissionid).mod.approve()
+                cursor.execute("""update modqueue set Actioned = 1,Approved=1,Removed=0 where ID = '"""+str(submissionid)+"""'""")
+                connection.commit()
                 
-        submissionid=message[message.find("https://reddit.com/r/"):len(message)].split("/comments/")[1].split("/")[0]
-        if str(reaction.emoji).split(":")[1].split(":")[0]=="Approve":
-            print("Approving " + submissionid)
-            tempuser.submission(submissionid).mod.approve()
-            cursor.execute("""update modqueue set Actioned = 1,Approved=1,Removed=0 where ID = '"""+str(submissionid)+"""'""")
-            connection.commit()
-            
-            
-    
-        
-        else: 
-            reactstr=flairlist[str(reaction.emoji).split(":")[1].split(":")[0]]
+                
         
             
-            print("Flairing " + submissionid + " with " + str(reaction.emoji).split(":")[1].split(":")[0])
-            tempuser.submission(submissionid).flair.select(reactstr)
-            cursor.execute("""update modqueue set Actioned = 1,Approved=0,Removed=1 where ID = '"""+str(submissionid)+"""'""")
-            connection.commit()
+            else: 
+                reactstr=flairlist[str(reaction.emoji).split(":")[1].split(":")[0]]
             
-           
+                
+                print("Flairing " + submissionid + " with " + str(reaction.emoji).split(":")[1].split(":")[0])
+                tempuser.submission(submissionid).flair.select(reactstr)
+                cursor.execute("""update modqueue set Actioned = 1,Approved=0,Removed=1 where ID = '"""+str(submissionid)+"""'""")
+                connection.commit()
+
+    except Exception as e:
+        print(e)     
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        print(exc_tb.tb_lineno)  
     #await client.reaction.message   
         
 
@@ -166,81 +169,209 @@ async def main():
                                 
                             
                                 if submission.link_flair_text is not None and "Removed:" in submission.link_flair_text:
+                                    
+                                    tempmessageid=cursor.execute("select messageID from modqueue where ID ='"""+str(submission.id)+"""'""").fetchall()
+                                    if len(tempmessageid)==0:
+                                        sql_command = """INSERT INTO modqueue (ID, messageID, Time, Author, Title, Score, UpvoteRatio, ImageURL, RedditURL, Reports, Likelihood, Actioned, Removed, Approved)
+                        VALUES ("""+"""?,?,?,?,?,?,?,?,?,?,?,?,?,?"""+""");"""
+                                        reports=""
+                                        if len(submission.user_reports) > 0:
+                                            reports=reports+"User Reports:\n"
+                                            for i in submission.user_reports:
+                                                reports=reports+str(i).replace("[","").replace("]","")+"\n"
+                                        if len(submission.mod_reports) > 0:
+                                            reports=reports+"\nMod Reports:\n"
+                                            for i in submission.mod_reports:
+                                                reports=reports+str(i).replace("[","").replace("]","")+"\n"
+
+                                        likelihood=0
+                                        totalremovals=open("discordserverlogusernames.txt","r").read().count(str(submission.author).replace(" ",""))
+                                        if totalremovals == 0:
+                                            likelihood+=0
+                                        elif totalremovals  == 1:
+                                            likelihood+=1.5
+                                        elif totalremovals  == 2:
+                                            likelihood+=2.5
+                                        elif totalremovals > 2:
+                                            likelihood+=3.5
+                                        ratio=submission.upvote_ratio
+                                        if ratio >= 0.9:
+                                            likelihood+=0
+                                        elif ratio >= 0.8 and ratio < 0.9:
+                                            likelihood+=1
+                                        elif ratio >= 0.7 and ratio < 0.8:
+                                            likelihood+=2
+                                        else:
+                                            likelihood+=3
+                                        
+                                        usercount=0
+                                        modcount=0
+                                        for report in submission.user_reports:
+                                            usercount+=int(report[1])
+                                        modcount+=len(submission.mod_reports)
+                                        modcount=modcount*2
+                                        reportcount=modcount+usercount
+                                        if reportcount == 1:
+                                            likelihood+=0
+                                        elif reportcount == 2:
+                                            likelihood+=1
+                                        elif reportcount == 3:
+                                            likelihood+=2
+                                        elif reportcount == 4:
+                                            likelihood+=3
+
+                                        else:
+                                            likelihood+=3.5
+                                        cursor.execute(sql_command,(str(submission.id),0,submission.created_utc,str(submission.author),str(submission.title)[0:150],submission.score,submission.upvote_ratio,str(submission.url),"https://reddit.com" + str(submission.permalink),str(reports.replace("\n",",")),likelihood,1,1,0))
+                                        connection.commit()
+                                    else:
+                                        cursor.execute("""update modqueue set Actioned = 1,Approved=0,Removed=1 where ID = '"""+str(submission.id)+"""'""")
+                                        connection.commit()
+                                        message = await channel.fetch_message(tempmessageid[0])
+                                        await message.delete()
+                                     
+
                                     pass
-                                
+                                elif submission.approved==True:
+                                    
+                                    tempmessageid=cursor.execute("select messageID from modqueue where ID ='"""+str(submission.id)+"""'""").fetchall()
+                                    if len(tempmessageid)==0:
+                                        sql_command = """INSERT INTO modqueue (ID, messageID, Time, Author, Title, Score, UpvoteRatio, ImageURL, RedditURL, Reports, Likelihood, Actioned, Removed, Approved)
+                        VALUES ("""+"""?,?,?,?,?,?,?,?,?,?,?,?,?,?"""+""");"""
+                                        reports=""
+                                        if len(submission.user_reports) > 0:
+                                            reports=reports+"User Reports:\n"
+                                            for i in submission.user_reports:
+                                                reports=reports+str(i).replace("[","").replace("]","")+"\n"
+                                        if len(submission.mod_reports) > 0:
+                                            reports=reports+"\nMod Reports:\n"
+                                            for i in submission.mod_reports:
+                                                reports=reports+str(i).replace("[","").replace("]","")+"\n"
+
+                                        likelihood=0
+                                        totalremovals=open("discordserverlogusernames.txt","r").read().count(str(submission.author).replace(" ",""))
+                                        if totalremovals == 0:
+                                            likelihood+=0
+                                        elif totalremovals  == 1:
+                                            likelihood+=1.5
+                                        elif totalremovals  == 2:
+                                            likelihood+=2.5
+                                        elif totalremovals > 2:
+                                            likelihood+=3.5
+                                        ratio=submission.upvote_ratio
+                                        if ratio >= 0.9:
+                                            likelihood+=0
+                                        elif ratio >= 0.8 and ratio < 0.9:
+                                            likelihood+=1
+                                        elif ratio >= 0.7 and ratio < 0.8:
+                                            likelihood+=2
+                                        else:
+                                            likelihood+=3
+                                        
+                                        usercount=0
+                                        modcount=0
+                                        for report in submission.user_reports:
+                                            usercount+=int(report[1])
+                                        modcount+=len(submission.mod_reports)
+                                        modcount=modcount*2
+                                        reportcount=modcount+usercount
+                                        if reportcount == 1:
+                                            likelihood+=0
+                                        elif reportcount == 2:
+                                            likelihood+=1
+                                        elif reportcount == 3:
+                                            likelihood+=2
+                                        elif reportcount == 4:
+                                            likelihood+=3
+
+                                        else:
+                                            likelihood+=3.5
+                                        cursor.execute(sql_command,(str(submission.id),0,submission.created_utc,str(submission.author),str(submission.title)[0:150],submission.score,submission.upvote_ratio,str(submission.url),"https://reddit.com" + str(submission.permalink),str(reports.replace("\n",",")),likelihood,1,0,1))
+                                        connection.commit()
+                                    else:
+                                        cursor.execute("""update modqueue set Actioned = 1,Approved=1,Removed=0 where ID = '"""+str(submission.id)+"""'""")
+                                        connection.commit()
+                                        message = await channel.fetch_message(tempmessageid[0])
+                                        await message.delete()
                                 #Redo this part using SQLite later
 
                                 elif ".jpg" in submission.url or ".png" in submission.url:
                                     
-                                    
-                                    reports=""
-                                    if len(submission.user_reports) > 0:
-                                        reports=reports+"User Reports:\n"
-                                        for i in submission.user_reports:
-                                            reports=reports+str(i).replace("[","").replace("]","")+"\n"
-                                    if len(submission.mod_reports) > 0:
-                                        reports=reports+"\nMod Reports:\n"
-                                        for i in submission.mod_reports:
-                                            reports=reports+str(i).replace("[","").replace("]","")+"\n"
-
-                                    likelihood=0
-                                    totalremovals=open("discordserverlogusernames.txt","r").read().count(str(submission.author).replace(" ",""))
-                                    if totalremovals == 0:
-                                        likelihood+=0
-                                    elif totalremovals  == 1:
-                                        likelihood+=1.5
-                                    elif totalremovals  == 2:
-                                        likelihood+=2.5
-                                    elif totalremovals > 2:
-                                        likelihood+=3.5
-                                    ratio=submission.upvote_ratio
-                                    if ratio >= 0.9:
-                                        likelihood+=0
-                                    elif ratio >= 0.8 and ratio < 0.9:
-                                        likelihood+=1
-                                    elif ratio >= 0.7 and ratio < 0.8:
-                                        likelihood+=2
+                                    if len(cursor.execute("select * from modqueue where Actioned=0").fetchall()) > 200:
+                                        print("Hard limit reached")
+                                        await asyncio.sleep(15)
+                                        
                                     else:
-                                        likelihood+=3
-                                    
-                                    usercount=0
-                                    modcount=0
-                                    for report in submission.user_reports:
-                                        usercount+=int(report[1])
-                                    modcount+=len(submission.mod_reports)
-                                    modcount=modcount*2
-                                    reportcount=modcount+usercount
-                                    if reportcount == 1:
-                                        likelihood+=0
-                                    elif reportcount == 2:
-                                        likelihood+=1
-                                    elif reportcount == 3:
-                                        likelihood+=2
-                                    elif reportcount == 4:
-                                        likelihood+=3
 
-                                    else:
-                                        likelihood+=3.5
-                                    message=submission.title + "\n\n" + "Author: " + str(submission.author) +"\n"+"Likelihood: " +str(likelihood) + "\n\n\n" +"Created: "+str(submission.created_utc) + "\n" +"Score: " + str(submission.score) + "\n" + "Spoiler: " + str(submission.spoiler) + "\n" + "NSFW: " + str(submission.over_18) + "\n" + reports+"\n\n"+"https://reddit.com" + submission.permalink + "\n\n"+ submission.url+"\n\n"
-                                    sql_command = """INSERT INTO modqueue (ID, messageID, Time, Author, Title, Score, UpvoteRatio, ImageURL, RedditURL, Reports, Likelihood, Actioned, Removed, Approved)
-                    VALUES ("""+"""?,?,?,?,?,?,?,?,?,?,?,?,?,?"""+""");"""
 
-                                    channel=client.get_channel(606905056415186977)
-                                    
-                                    newmessage=await channel.send(message)
-                                    cursor.execute(sql_command,(str(submission.id),newmessage.id,submission.created_utc,str(submission.author),str(submission.title)[0:150],submission.score,submission.upvote_ratio,str(submission.url),"https://reddit.com" + str(submission.permalink),str(reports.replace("\n",",")),likelihood,0,0,0))
-                                    connection.commit()
-                                    #for emoji in client.get_guild(590904331033640960).emojis:
-                                       #await newmessage.add_reaction(emoji)
-                                    emojis=['Notadankmeme','MetaBaiting','Approve','Normietrash','Repost','Repostchains7DAY','Titleisthememecaption','Violenttragedies','Personalinformation','Tooedgy']
+                                        reports=""
+                                        if len(submission.user_reports) > 0:
+                                            reports=reports+"User Reports:\n"
+                                            for i in submission.user_reports:
+                                                reports=reports+str(i).replace("[","").replace("]","")+"\n"
+                                        if len(submission.mod_reports) > 0:
+                                            reports=reports+"\nMod Reports:\n"
+                                            for i in submission.mod_reports:
+                                                reports=reports+str(i).replace("[","").replace("]","")+"\n"
 
-                                    emojilist=client.get_guild(590904331033640960).emojis
-                                    
+                                        likelihood=0
+                                        totalremovals=open("discordserverlogusernames.txt","r").read().count(str(submission.author).replace(" ",""))
+                                        if totalremovals == 0:
+                                            likelihood+=0
+                                        elif totalremovals  == 1:
+                                            likelihood+=1.5
+                                        elif totalremovals  == 2:
+                                            likelihood+=2.5
+                                        elif totalremovals > 2:
+                                            likelihood+=3.5
+                                        ratio=submission.upvote_ratio
+                                        if ratio >= 0.9:
+                                            likelihood+=0
+                                        elif ratio >= 0.8 and ratio < 0.9:
+                                            likelihood+=1
+                                        elif ratio >= 0.7 and ratio < 0.8:
+                                            likelihood+=2
+                                        else:
+                                            likelihood+=3
+                                        
+                                        usercount=0
+                                        modcount=0
+                                        for report in submission.user_reports:
+                                            usercount+=int(report[1])
+                                        modcount+=len(submission.mod_reports)
+                                        modcount=modcount*2
+                                        reportcount=modcount+usercount
+                                        if reportcount == 1:
+                                            likelihood+=0
+                                        elif reportcount == 2:
+                                            likelihood+=1
+                                        elif reportcount == 3:
+                                            likelihood+=2
+                                        elif reportcount == 4:
+                                            likelihood+=3
 
-                                    for i in emojilist:
-                                        if i.name in emojis:
-                                            await newmessage.add_reaction(i)
-                                    await asyncio.sleep(2)
+                                        else:
+                                            likelihood+=3.5
+                                        message=submission.title + "\n\n" + "Author: " + str(submission.author) +"\n"+"Likelihood: " +str(likelihood) + "\n\n\n" +"Created: "+str(submission.created_utc) + "\n" +"Score: " + str(submission.score) + "\n" + "Spoiler: " + str(submission.spoiler) + "\n" + "NSFW: " + str(submission.over_18) + "\n" + reports+"\n\n"+"https://reddit.com" + submission.permalink + "\n\n"+ submission.url+"\n\n"
+                                        sql_command = """INSERT INTO modqueue (ID, messageID, Time, Author, Title, Score, UpvoteRatio, ImageURL, RedditURL, Reports, Likelihood, Actioned, Removed, Approved)
+                        VALUES ("""+"""?,?,?,?,?,?,?,?,?,?,?,?,?,?"""+""");"""
+
+                                        channel=client.get_channel(606905056415186977)
+                                        
+                                        newmessage=await channel.send(message)
+                                        cursor.execute(sql_command,(str(submission.id),newmessage.id,submission.created_utc,str(submission.author),str(submission.title)[0:150],submission.score,submission.upvote_ratio,str(submission.url),"https://reddit.com" + str(submission.permalink),str(reports.replace("\n",",")),likelihood,0,0,0))
+                                        connection.commit()
+                                        #for emoji in client.get_guild(590904331033640960).emojis:
+                                        #await newmessage.add_reaction(emoji)
+                                        emojis=['Notadankmeme','MetaBaiting','Approve','Normietrash','Repost','Repostchains7DAY','Titleisthememecaption','Violenttragedies','Personalinformation','Tooedgy']
+
+                                        emojilist=client.get_guild(590904331033640960).emojis
+                                        
+
+                                        for i in emojilist:
+                                            if i.name in emojis:
+                                                await newmessage.add_reaction(i)
+                                        await asyncio.sleep(4)
 
                             
                     except Exception as e:
@@ -293,10 +424,10 @@ async def remove_no_longer_in_queue():
                     exc_type, exc_obj, exc_tb = sys.exc_info()
                     print(exc_tb.tb_lineno) 
                     pass
-            await asyncio.sleep(1)
+            await asyncio.sleep(2.5)
     
         print("Finished checking posts against queue, resuming")
-        await asyncio.sleep(6)
+        await asyncio.sleep(10)
       
 async def modlog():
     print("Beginning modlog collection program.")
@@ -319,7 +450,7 @@ async def modlog():
                         with open("discordserverlogusernames.txt","a+") as f:
             
                             f.write(str(log.target_author) + " ")
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
         except Exception as e:
             print(e)
