@@ -8,6 +8,7 @@ import os
 #model = load_model('my_model.h5')
 import numpy as np
 import sys, os
+#DB SCHEMA
 #CREATE TABLE
 #sql_command = """
 #CREATE TABLE modqueue ( 
